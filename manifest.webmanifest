@@ -1,0 +1,10 @@
+{
+  "name": "Scripture Notebook",
+  "short_name": "Scripture",
+  "description": "Read the ESV Bible and write in the margins with Apple Pencil, mouse or finger.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ebe8e1",
+  "theme_color": "#ebe8e1",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
