@@ -991,7 +991,51 @@
     $('#apiKeyInput').value = settings.apiKey;
     $('#chkPenOnly').checked = settings.penOnly;
   }
-  function openSettings() { syncSettingsUI(); settingsDlg.showModal(); }
+  function openSettings() { syncSettingsUI(); renderOffline(); settingsDlg.showModal(); }
+
+  // ---------- Offline reading ----------
+  const refName = (b, c) => b.chapters > 1 ? `${b.esvName} ${c}` : b.name;
+  async function renderOffline() {
+    const tr = settings.translation;
+    const sum = await Sources.savedSummary(tr);
+    const n = sum.chapters.length, plural = n === 1 ? '' : 's';
+    $('#offlineStatus').textContent = !n ? 'No chapters saved on this device yet.'
+      : tr === 'esv' ? `${n} ESV chapter${plural} saved on this device (${sum.verses} of ${Sources.ESV_VERSE_LIMIT} verses).`
+      : `${n} World English Bible chapter${plural} saved on this device.`;
+    const items = sum.chapters
+      .map(c => ({ b: BOOKS.find(x => x.id === c.book), c: c.chapter }))
+      .filter(x => x.b)
+      .sort((x, y) => x.b.index - y.b.index || x.c - y.c);
+    $('#offlineList').innerHTML = items.map(x => `<button class="recent-btn" data-book="${x.b.index}" data-ch="${x.c}">${refName(x.b, x.c)}</button>`).join('');
+    $('#btnDownload').textContent = book().chapters > 1 ? `Save ${book().name} ${settings.chapter} onward` : `Save ${book().name}`;
+  }
+  $('#offlineList').onclick = e => {
+    const b = e.target.closest('[data-book]'); if (!b) return;
+    settingsDlg.close(); loadChapter(+b.dataset.book, +b.dataset.ch);
+  };
+  $('#btnDownload').onclick = async () => {
+    const tr = settings.translation, b = book(), btn = $('#btnDownload');
+    if (tr === 'esv' && !settings.apiKey) { toast('Add your ESV API key first.'); return; }
+    if (tr === 'esv' && b.chapters === 1) { toast(`The ESV doesn’t allow one-chapter books like ${b.name} to be stored offline.`); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const r = await Sources.download(tr, b, settings.chapter, settings.apiKey, 10, n => { btn.textContent = `Saving… ${n}`; });
+      const range = r.saved.length > 1 ? `${b.esvName} ${r.saved[0]}–${r.saved[r.saved.length - 1]}` : r.saved.length ? refName(b, r.saved[0]) : '';
+      if (!r.saved.length) toast(`Couldn’t save more of ${b.name}: the ESV allows 500 verses, and at most half of a book, on a device.`);
+      else toast(`Saved ${range} for offline reading.` + (r.reason === 'limit' ? ' That’s as much as the ESV allows to be stored right now.' : ''));
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      btn.disabled = false;
+      renderOffline();
+    }
+  };
+  $('#btnClearTexts').onclick = async () => {
+    if (!await ask('Remove all saved chapter text from this device? Your notes are not affected.', 'Remove')) return;
+    await Sources.clearSaved();
+    Sources.clear();
+    renderOffline();
+  };
   $('#btnSettings').onclick = openSettings;
   $('#segTranslation').onclick = e => {
     const v = e.target.closest('button')?.dataset.val; if (!v) return;
@@ -1082,6 +1126,9 @@
   }
 
   // ---------- Start ----------
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  window.addEventListener('offline', () => toast('You’re offline. Your notes and saved chapters still work.'));
+  window.addEventListener('online', () => toast('Back online.'));
   setTool(settings.tool);
   updateChrome();
   applyScale();

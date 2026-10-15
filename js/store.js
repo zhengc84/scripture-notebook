@@ -1,22 +1,28 @@
-// Annotation storage: one record per chapter in IndexedDB, with a localStorage fallback.
+// Storage in IndexedDB:
+//   pages: one record per chapter with your ink and text boxes (localStorage fallback)
+//   texts: chapter text kept for offline reading (see js/sources.js for the ESV limits)
 window.Store = (() => {
   let dbp = null;
   const LS = 'sn:page:';
 
   function open() {
     if (!dbp) dbp = new Promise((resolve, reject) => {
-      const r = indexedDB.open('scripture-notebook', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('pages', { keyPath: 'key' });
+      const r = indexedDB.open('scripture-notebook', 2);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('texts')) db.createObjectStore('texts', { keyPath: 'key' });
+      };
       r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error);
     });
     return dbp;
   }
 
-  function req(mode, fn) {
+  function req(store, mode, fn) {
     return open().then(db => new Promise((resolve, reject) => {
-      const t = db.transaction('pages', mode);
-      const r = fn(t.objectStore('pages'));
+      const t = db.transaction(store, mode);
+      const r = fn(t.objectStore(store));
       t.oncomplete = () => resolve(r ? r.result : undefined);
       t.onerror = t.onabort = () => reject(t.error);
     }));
@@ -34,11 +40,18 @@ window.Store = (() => {
   };
 
   const wrap = (idb, fallback) => (...a) => idb(...a).catch(() => fallback(...a));
+  const none = () => undefined;
 
   return {
-    get: wrap(k => req('readonly', s => s.get(k)), ls.get),
-    put: wrap(p => req('readwrite', s => s.put(p)), ls.put),
-    del: wrap(k => req('readwrite', s => s.delete(k)), ls.del),
-    all: wrap(() => req('readonly', s => s.getAll()), ls.all),
+    get: wrap(k => req('pages', 'readonly', s => s.get(k)), ls.get),
+    put: wrap(p => req('pages', 'readwrite', s => s.put(p)), ls.put),
+    del: wrap(k => req('pages', 'readwrite', s => s.delete(k)), ls.del),
+    all: wrap(() => req('pages', 'readonly', s => s.getAll()), ls.all),
+    texts: {
+      get: wrap(k => req('texts', 'readonly', s => s.get(k)), none),
+      put: wrap(t => req('texts', 'readwrite', s => s.put(t)), none),
+      del: wrap(k => req('texts', 'readwrite', s => s.delete(k)), none),
+      all: wrap(() => req('texts', 'readonly', s => s.getAll()), () => []),
+    },
   };
 })();

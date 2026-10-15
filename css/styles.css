@@ -373,6 +373,11 @@ dialog.sheet.confirm { width: min(400px, calc(100vw - 32px)); }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .pill-btn.danger-fill { background: var(--danger); border-color: transparent; color: #fff; }
 
+.offline-status { margin: 0 0 10px; color: var(--ui-text); }
+.offline-actions { margin-top: 12px; }
+#offlineList .recent-btn { font-size: 14px; padding: 3px 10px; }
+.pill-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ---------- Toast ---------- */
 #toast {
   position: fixed; z-index: 50; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);

@@ -25,6 +25,18 @@ anywhere on it with Apple Pencil, a mouse, a trackpad or your finger.
 - Ink is anchored to the nearest verse, so it stays beside the right verse if the text
   ever reflows.
 
+## Offline use
+
+After the first visit, the app opens without internet: a service worker (`sw.js`) keeps the
+app's files on the device. Your annotations are always stored on the device.
+
+Chapter text is kept too, so chapters you've read open offline. **Settings → Offline reading**
+shows what's saved, and can save the next chapters of the book you're in. The ESV API terms
+allow at most 500 verses, and no more than half of any book, to be stored locally, so ESV
+chapters are kept within those limits (the least recently read are dropped first, one-chapter
+books are never stored, and saved text is refreshed after 30 days). World English Bible chapters
+have no limit.
+
 ## Running it
 
 It's a static site with no build step. Serve the folder with any web server:
@@ -47,8 +59,8 @@ For a quick test on the same Wi-Fi network you can also open `http://<your-mac's
 2. Paste the key into the app, either on the first page or under **Settings → ESV API key**.
 
 The key is stored only in your browser's localStorage. Keys are for personal,
-non-commercial use. To follow the ESV API terms, the app keeps ESV text in memory only
-and never saves it to disk. Your annotations are saved, but the scripture text is not.
+non-commercial use. Offline copies of ESV text are kept within the API's storage limits
+(see Offline use above).
 
 ## Keyboard shortcuts
 
@@ -70,6 +82,7 @@ and never saves it to disk. Your annotations are saved, but the scripture text i
 - `js/ink.js`: stroke geometry: pressure outlines, highlighter paths, hit-testing, lasso
 - `js/store.js`: IndexedDB storage, with a localStorage fallback
 - `js/app.js`: everything else: page layout, tools, input, undo, notes, navigation
+- `sw.js`: service worker that keeps the app's files on the device for offline use
 
 ---
 
