@@ -83,7 +83,7 @@ non-commercial use. Offline copies of ESV text are kept within the API's storage
 - `js/ink.js`: stroke geometry: pressure outlines, highlighter paths, hit-testing, lasso
 - `js/store.js`: IndexedDB storage, with a localStorage fallback
 - `js/app.js`: everything else: page layout, tools, input, undo, notes, navigation
-- `sw.js`: service worker that keeps the app's files on the device for offline use
+- `sw.js`: service worker that keeps the app's files on the device for offline use. Bump its `VERSION` with every published change so installed copies pick up the update.
 
 ---
 

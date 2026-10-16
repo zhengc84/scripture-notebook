@@ -90,6 +90,17 @@
     wrap.style.willChange = 'transform';
     viewport.classList.add('zooming');
   }
+  let liveFrame = 0, livePending = null;
+  // Touch events can arrive faster than the screen refreshes; apply at most one update per frame.
+  function queueLive(k, mx, my) {
+    livePending = [k, mx, my];
+    if (!liveFrame) liveFrame = requestAnimationFrame(flushLive);
+  }
+  function flushLive() {
+    cancelAnimationFrame(liveFrame); liveFrame = 0;
+    if (live && livePending) updateLive(...livePending);
+    livePending = null;
+  }
   function updateLive(k, mx, my) {
     k = clamp(k, ZMIN / live.z0, ZMAX / live.z0);
     live.k = k; live.mx = mx; live.my = my;
@@ -100,6 +111,7 @@
   }
   function commitLive() {
     if (!live) return;
+    flushLive();
     const { lx, ly, mx, my } = live;
     clearTimeout(live.timer);
     const before = page.getBoundingClientRect(); // where the page appears right now
@@ -837,7 +849,7 @@
     if (!pinch || !live || ts.length < 2) return;
     if (e.cancelable) e.preventDefault();
     const [a, b] = ts;
-    updateLive(spread(a, b) / pinch.d0, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+    queueLive(spread(a, b) / pinch.d0, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
   }, { passive: false });
   const endPinch = e => {
     if (pinch && touchesOf(e).length < 2) { pinch = null; pinchingUntil = Date.now() + 250; commitLive(); }
@@ -853,7 +865,8 @@
     if (live && live.gesture) return;
     if (live && live.timer) commitLive();
     if (!live) beginLive(e.clientX, e.clientY);
-    updateLive(live.k * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+    const k = (livePending ? livePending[0] : live.k) * Math.exp(-e.deltaY * 0.01);
+    queueLive(k, e.clientX, e.clientY);
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(commitLive, 160);
   }, { passive: false });
@@ -865,7 +878,7 @@
   });
   document.addEventListener('gesturechange', e => {
     e.preventDefault();
-    if (live && live.gesture) updateLive(e.scale, e.clientX, e.clientY);
+    if (live && live.gesture) queueLive(e.scale, e.clientX, e.clientY);
   });
   document.addEventListener('gestureend', e => {
     e.preventDefault();
@@ -1066,7 +1079,12 @@
     $('#apiKeyInput').value = settings.apiKey;
     $('#chkPenOnly').checked = settings.penOnly;
   }
-  function openSettings() { syncSettingsUI(); renderOffline(); settingsDlg.showModal(); }
+  function openSettings() { syncSettingsUI(); renderOffline(); showVersion(); settingsDlg.showModal(); }
+  async function showVersion() {
+    let v = '';
+    try { v = (await caches.keys()).filter(k => /^scripture-notebook-\d/.test(k)).map(k => k.replace('scripture-notebook-', '')).sort().pop() || ''; } catch {}
+    $('#appVersion').textContent = v ? `Version ${v}` : '';
+  }
 
   // ---------- Offline reading ----------
   const refName = (b, c) => b.chapters > 1 ? `${b.esvName} ${c}` : b.name;
@@ -1201,7 +1219,15 @@
   }
 
   // ---------- Start ----------
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const hadWorker = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      // A Home Screen app usually resumes rather than restarting, so check for updates on resume too.
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadWorker) $('#updateBar').hidden = false; });
+  }
+  $('#btnReload').onclick = () => { saveNow(); location.reload(); };
   window.addEventListener('offline', () => toast('You’re offline. Your notes and saved chapters still work.'));
   window.addEventListener('online', () => toast('Back online.'));
   setTool(settings.tool);
