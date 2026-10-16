@@ -74,19 +74,68 @@
     $('#btnZoomReset').textContent = Math.round(settings.zoom * 100) + '%';
     if (sel) positionSelMenu();
   }
-  function zoomAt(z, cx, cy) {
+  // While a pinch (or trackpad zoom) is in progress the page is only scaled visually, pinned to the
+  // point between your fingers, which keeps it smooth. The real re-layout happens once, when it ends.
+  const ZMIN = 0.5, ZMAX = 4;
+  let live = null;
+  function beginLive(cx, cy) {
+    wrap.style.transition = ''; wrap.style.transform = ''; // stop any settle animation first
     const r = page.getBoundingClientRect();
-    const ax = (cx - r.left) / scale, ay = (cy - r.top) / scale;
-    settings.zoom = clamp(z, 0.5, 4);
+    live = {
+      z0: settings.zoom, s0: scale, k: 1, mx: cx, my: cy,
+      lx: (cx - r.left) / scale, ly: (cy - r.top) / scale, // page point under the focus
+      wx: r.left, wy: r.top, sl0: viewport.scrollLeft, st0: viewport.scrollTop,
+    };
+    wrap.style.transformOrigin = '0 0';
+    wrap.style.willChange = 'transform';
+    viewport.classList.add('zooming');
+  }
+  function updateLive(k, mx, my) {
+    k = clamp(k, ZMIN / live.z0, ZMAX / live.z0);
+    live.k = k; live.mx = mx; live.my = my;
+    // Where the page's corner is now; the browser may have scrolled it since the gesture began.
+    const wx = live.wx - (viewport.scrollLeft - live.sl0), wy = live.wy - (viewport.scrollTop - live.st0);
+    const tx = mx - wx - k * live.lx * live.s0, ty = my - wy - k * live.ly * live.s0;
+    wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${k})`;
+  }
+  function commitLive() {
+    if (!live) return;
+    const { lx, ly, mx, my } = live;
+    clearTimeout(live.timer);
+    const before = page.getBoundingClientRect(); // where the page appears right now
+    settings.zoom = clamp(live.z0 * live.k, ZMIN, ZMAX);
+    live = null;
+    wrap.style.transition = ''; wrap.style.transform = '';
+    viewport.classList.remove('zooming');
     applyScale();
-    const r2_ = page.getBoundingClientRect();
-    viewport.scrollLeft += r2_.left + ax * scale - cx;
-    viewport.scrollTop += r2_.top + ay * scale - cy;
+    const r = page.getBoundingClientRect();
+    viewport.scrollLeft += r.left + lx * scale - mx;
+    viewport.scrollTop += r.top + ly * scale - my;
     saveSettings();
+    // If the page couldn't stay exactly under the fingers (e.g. it re-centers once it fits the
+    // screen), glide it into place instead of jumping.
+    const after = page.getBoundingClientRect();
+    const dx = before.left - after.left, dy = before.top - after.top;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      wrap.style.transform = `translate(${dx}px, ${dy}px)`;
+      wrap.getBoundingClientRect();
+      wrap.style.transition = 'transform 0.2s ease-out';
+      wrap.style.transform = '';
+      setTimeout(() => { if (!live) { wrap.style.transition = ''; wrap.style.willChange = ''; } }, 220);
+    } else {
+      wrap.style.willChange = '';
+    }
+  }
+  function animateZoom(z, cx, cy) {
+    commitLive();
+    beginLive(cx, cy);
+    wrap.style.transition = 'transform 0.18s ease-out';
+    updateLive(z / settings.zoom, cx, cy);
+    live.timer = setTimeout(commitLive, 190);
   }
   function zoomCenter(z) {
     const vr = viewport.getBoundingClientRect();
-    zoomAt(z, vr.left + vr.width / 2, vr.top + vr.height / 2);
+    animateZoom(z, vr.left + vr.width / 2, vr.top + vr.height / 2);
   }
 
   // ---------- Layout & anchoring ----------
@@ -424,7 +473,7 @@
   }
 
   page.addEventListener('pointerdown', e => {
-    if (!cur.key || active) return;
+    if (!cur.key || active || live) return;
     if (e.target.closest('.sel-menu, .note-grip')) return;
     if (tool() === 'text') return; // handled on click so taps don't fire while scrolling
 
@@ -772,35 +821,56 @@
 
   // ---------- Pinch & wheel zoom ----------
   const touchesOf = e => [...e.touches].filter(t => t.touchType !== 'stylus');
+  const spread = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
   viewport.addEventListener('touchstart', e => {
     const ts = touchesOf(e);
     if (ts.length !== 2) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     if (active && active.pointerType === 'touch') cancelActive();
     const [a, b] = ts;
-    pinch = { d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z0: settings.zoom, mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2 };
+    commitLive();
+    beginLive((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+    pinch = { d0: spread(a, b) };
   }, { passive: false });
   viewport.addEventListener('touchmove', e => {
     const ts = touchesOf(e);
-    if (!pinch || ts.length < 2) return;
-    e.preventDefault();
+    if (!pinch || !live || ts.length < 2) return;
+    if (e.cancelable) e.preventDefault();
     const [a, b] = ts;
-    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
-    viewport.scrollLeft -= mx - pinch.mx;
-    viewport.scrollTop -= my - pinch.my;
-    pinch.mx = mx; pinch.my = my;
-    zoomAt(pinch.z0 * d / pinch.d0, mx, my);
+    updateLive(spread(a, b) / pinch.d0, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
   }, { passive: false });
-  viewport.addEventListener('touchend', e => {
-    if (pinch && touchesOf(e).length < 2) { pinch = null; pinchingUntil = Date.now() + 250; }
-  });
-  document.addEventListener('gesturestart', e => e.preventDefault());
+  const endPinch = e => {
+    if (pinch && touchesOf(e).length < 2) { pinch = null; pinchingUntil = Date.now() + 250; commitLive(); }
+  };
+  viewport.addEventListener('touchend', endPinch);
+  viewport.addEventListener('touchcancel', endPinch);
+
+  // Trackpad pinch: Chrome and Firefox send ctrl+wheel events, Safari on the Mac sends gesture events.
+  let wheelTimer = 0;
   viewport.addEventListener('wheel', e => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    zoomAt(settings.zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+    if (live && live.gesture) return;
+    if (live && live.timer) commitLive();
+    if (!live) beginLive(e.clientX, e.clientY);
+    updateLive(live.k * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(commitLive, 160);
   }, { passive: false });
+  const touchDevice = navigator.maxTouchPoints > 0;
+  document.addEventListener('gesturestart', e => {
+    e.preventDefault();
+    if (touchDevice || pinch) return; // on iPad the touch handlers above do the pinch
+    commitLive(); beginLive(e.clientX, e.clientY); live.gesture = true;
+  });
+  document.addEventListener('gesturechange', e => {
+    e.preventDefault();
+    if (live && live.gesture) updateLive(e.scale, e.clientX, e.clientY);
+  });
+  document.addEventListener('gestureend', e => {
+    e.preventDefault();
+    if (live && live.gesture) commitLive();
+  });
   window.addEventListener('resize', applyScale);
 
   // ---------- Toolbar & tray ----------
