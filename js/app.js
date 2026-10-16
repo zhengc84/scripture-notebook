@@ -27,7 +27,7 @@
   // ---------- Settings ----------
   const DEFAULTS = {
     translation: 'esv', apiKey: '', book: 42, chapter: 1, paper: 'lined', layout: 'verses',
-    penOnly: false, penDetected: false, zoom: 1, tool: 'pen',
+    penOnly: false, penDetected: false, zoom: 1, tool: 'pen', prevTool: 'eraser',
     pen: { color: PEN_COLORS[0], size: 1 },
     hl: { color: HL_COLORS[0], size: 1, straight: true },
     eraser: { size: 1, mode: 'partial' },
@@ -806,6 +806,7 @@
   // ---------- Toolbar & tray ----------
   function setTool(t) {
     if (document.activeElement && document.activeElement.closest?.('.note')) document.activeElement.blur();
+    if (t !== settings.tool) settings.prevTool = settings.tool;
     settings.tool = t; saveSettings();
     page.dataset.tool = t;
     $$('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
@@ -866,7 +867,11 @@
     }
   }
 
-  $$('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+  // Tapping the tool you're already on switches back to the one you used before it.
+  $$('.tool').forEach(b => b.addEventListener('click', () => {
+    const t = b.dataset.tool;
+    setTool(t === settings.tool && settings.prevTool && settings.prevTool !== t ? settings.prevTool : t);
+  }));
   $('#btnUndo').onclick = undo;
   $('#btnRedo').onclick = redo;
   $('#btnPrev').onclick = $('#btnPrev2').onclick = () => step(-1);

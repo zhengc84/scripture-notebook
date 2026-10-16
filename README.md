@@ -68,6 +68,7 @@ non-commercial use. Offline copies of ESV text are kept within the API's storage
 | --- | --- |
 | P / H / E / L / T | Pen / Highlighter / Eraser / Lasso / Text |
 | Hold Space | Temporary hand (drag to scroll) |
+| Tap the current tool again | Switch back to the previous tool |
 | ⌘Z / ⇧⌘Z | Undo / Redo |
 | ← / → | Previous / next chapter |
 | ⌘ + scroll or trackpad pinch | Zoom |
